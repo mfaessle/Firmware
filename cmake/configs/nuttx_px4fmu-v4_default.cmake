@@ -96,9 +96,9 @@ set(config_module_list
 	# modules/segway # XXX Needs GCC 4.7 fix
 	modules/fw_pos_control_l1
 	modules/fw_att_control
-	modules/mc_att_control
-	modules/mc_pos_control
-	modules/vtol_att_control
+	#modules/mc_att_control
+	#modules/mc_pos_control
+	#modules/vtol_att_control
 
 	#
 	# Logging
@@ -134,6 +134,11 @@ set(config_module_list
 	lib/DriverFramework/framework
 	platforms/nuttx
 
+	#
+	# Matthias
+	#
+	modules/fw_manual_assist
+	
 	# had to add for cmake, not sure why wasn't in original config
 	platforms/common
 	platforms/nuttx/px4_layer
@@ -141,12 +146,12 @@ set(config_module_list
 	#
 	# OBC challenge
 	#
-	modules/bottle_drop
+	#modules/bottle_drop
 
 	#
 	# Rover apps
 	#
-	examples/rover_steering_control
+	#examples/rover_steering_control
 
 	#
 	# Demo apps
