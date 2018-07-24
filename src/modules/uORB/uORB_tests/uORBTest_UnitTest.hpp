@@ -36,13 +36,14 @@
 #include "../uORBCommon.hpp"
 #include "../uORB.h"
 #include <px4_time.h>
+#include <px4_tasks.h>
 
 struct orb_test {
 	int val;
 	hrt_abstime time;
 };
-ORB_DEFINE(orb_test, struct orb_test, sizeof(orb_test), "ORB_TEST:int val;hrt_abstime time;");
-ORB_DEFINE(orb_multitest, struct orb_test, sizeof(orb_test), "ORB_MULTITEST:int val;hrt_abstime time;");
+ORB_DECLARE(orb_test);
+ORB_DECLARE(orb_multitest);
 
 
 struct orb_test_medium {
@@ -50,19 +51,17 @@ struct orb_test_medium {
 	hrt_abstime time;
 	char junk[64];
 };
-ORB_DEFINE(orb_test_medium, struct orb_test_medium, sizeof(orb_test_medium),
-	   "ORB_TEST_MEDIUM:int val;hrt_abstime time;char[64] junk;");
-ORB_DEFINE(orb_test_medium_multi, struct orb_test_medium, sizeof(orb_test_medium),
-	   "ORB_TEST_MEDIUM_MULTI:int val;hrt_abstime time;char[64] junk;");
-
+ORB_DECLARE(orb_test_medium);
+ORB_DECLARE(orb_test_medium_multi);
+ORB_DECLARE(orb_test_medium_queue);
+ORB_DECLARE(orb_test_medium_queue_poll);
 
 struct orb_test_large {
 	int val;
 	hrt_abstime time;
 	char junk[512];
 };
-ORB_DEFINE(orb_test_large, struct orb_test_large, sizeof(orb_test_large),
-	   "ORB_TEST_LARGE:int val;hrt_abstime time;char[512] junk;");
+ORB_DECLARE(orb_test_large);
 
 
 namespace uORBTest
@@ -85,11 +84,12 @@ private:
 	UnitTest() : pubsubtest_passed(false), pubsubtest_print(false) {}
 
 	// Disallow copy
-	UnitTest(const uORBTest::UnitTest &) {};
-	static int pubsubtest_threadEntry(char *const argv[]);
-	int pubsublatency_main(void);
+	UnitTest(const uORBTest::UnitTest & /*unused*/) = delete;
 
-	static int pub_test_multi2_entry(char *const argv[]);
+	static int pubsubtest_threadEntry(int argc, char *argv[]);
+	int pubsublatency_main();
+
+	static int pub_test_multi2_entry(int argc, char *argv[]);
 	int pub_test_multi2_main();
 
 	volatile bool _thread_should_exit;
@@ -98,13 +98,23 @@ private:
 	bool pubsubtest_print;
 	int pubsubtest_res = OK;
 
-	int test_unadvertise();
 	orb_advert_t _pfd[4]; ///< used for test_multi and test_multi_reversed
 
 	int test_single();
+
+	/* These 3 depend on each other and must be called in this order */
 	int test_multi();
-	int test_multi2();
 	int test_multi_reversed();
+	int test_unadvertise();
+
+	int test_multi2();
+
+	/* queuing tests */
+	int test_queue();
+	static int pub_test_queue_entry(int argc, char *argv[]);
+	int pub_test_queue_main();
+	int test_queue_poll_notify();
+	volatile int _num_messages_sent = 0;
 
 	int test_fail(const char *fmt, ...);
 	int test_note(const char *fmt, ...);
@@ -120,7 +130,11 @@ int uORBTest::UnitTest::latency_test(orb_id_t T, bool print)
 
 	orb_advert_t pfd0 = orb_advertise(T, &t);
 
-	char *const args[1] = { NULL };
+	if (pfd0 == nullptr) {
+		return test_fail("orb_advertise failed (%i)", errno);
+	}
+
+	char *const args[1] = { nullptr };
 
 	pubsubtest_print = print;
 	pubsubtest_passed = false;

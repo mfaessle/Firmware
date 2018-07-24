@@ -54,7 +54,7 @@
 #include <unistd.h>
 #include <getopt.h>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
 #include <systemlib/conversions.h>
 
@@ -118,7 +118,7 @@ TEST_PPM::~TEST_PPM()
 int
 TEST_PPM::init()
 {
-	stm32_configgpio(TEST_PPM_PIN);
+	px4_arch_configgpio(TEST_PPM_PIN);
 	start();
 	return OK;
 }
@@ -148,11 +148,11 @@ void
 TEST_PPM::do_out(void)
 {
 	if ((_call_times % 2) == 0) {
-		stm32_gpiowrite(TEST_PPM_PIN, false);
+		px4_arch_gpiowrite(TEST_PPM_PIN, false);
 		hrt_call_after(&_call, _values[_call_times / 2] - _plus_width, (hrt_callout)&TEST_PPM::loops, this);
 
 	} else {
-		stm32_gpiowrite(TEST_PPM_PIN, true);
+		px4_arch_gpiowrite(TEST_PPM_PIN, true);
 		hrt_call_after(&_call, _plus_width, (hrt_callout)&TEST_PPM::loops, this);
 	}
 
@@ -201,7 +201,7 @@ start(unsigned  channels)
 fail:
 
 	if (g_test != nullptr) {
-		delete(g_test);
+		delete (g_test);
 		g_test = nullptr;
 	}
 
@@ -249,23 +249,26 @@ usage()
 int
 test_ppm_main(int argc, char *argv[])
 {
+	if (argc < 2) {
+		test_ppm::usage();
+		return -1;
+	}
+
 	const char *verb = argv[1];
 	unsigned  channels = 7;
 
 	/*
 	 * Start/load the driver.
-
 	 */
-
 	if (!strcmp(verb, "start")) {
 		test_ppm::start(channels);
-		exit(0);
+		return 0;
 	}
 
 	if (!strcmp(verb, "stop")) {
 
 		test_ppm::stop();
-		exit(0);
+		return 0;
 	}
 
 	/*
@@ -280,11 +283,9 @@ test_ppm_main(int argc, char *argv[])
 		unsigned value	= strtol(argv[3], NULL, 0);
 
 		test_ppm::set(channel, value);
-		exit(0);
+		return 0;
 	}
 
-
-
 	test_ppm::usage();
-	exit(1);
+	return -1;
 }

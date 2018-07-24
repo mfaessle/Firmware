@@ -1,22 +1,29 @@
 #!/bin/bash
 
-rc_script=$1
-debugger=$2
-program=$3
-model=$4
-build_path=$5
-curr_dir=`pwd`
+set -e
+
+echo args: $@
+
+sitl_bin=$1
+rcS_dir=$2
+debugger=$3
+program=$4
+model=$5
+src_path=$6
+build_path=$7
 
 echo SITL ARGS
-echo rc_script: $rc_script
+
+echo sitl_bin: $sitl_bin
+echo rcS_dir: $rcS_dir
 echo debugger: $debugger
 echo program: $program
 echo model: $model
+echo src_path: $src_path
 echo build_path: $build_path
 
-mkdir -p $build_path/src/firmware/posix/rootfs/fs/microsd
-mkdir -p $build_path/src/firmware/posix/rootfs/eeprom
-touch $build_path/src/firmware/posix/rootfs/eeprom/parameters
+working_dir=`pwd`
+rootfs=$build_path/tmp/rootfs
 
 if [ "$chroot" == "1" ]
 then
@@ -27,117 +34,142 @@ else
 	sudo_enabled=""
 fi
 
+# To disable user input
+if [[ -n "$NO_PXH" ]]; then
+	no_pxh=-d
+else
+	no_pxh=""
+fi
+
 if [ "$model" == "" ] || [ "$model" == "none" ]
 then
 	echo "empty model, setting iris as default"
 	model="iris"
 fi
 
-if [ "$#" -lt 5 ]
+# check replay mode
+if [ "$replay_mode" == "ekf2" ]
 then
-	echo usage: sitl_run.sh rc_script debugger program model build_path
+	model="iris_replay"
+	# create the publisher rules
+	mkdir -p $rootfs
+	publisher_rules_file="$rootfs/orb_publisher.rules"
+	cat <<EOF > "$publisher_rules_file"
+restrict_topics: sensor_combined, vehicle_gps_position, vehicle_land_detected
+module: replay
+ignore_others: false
+EOF
+fi
+
+if [ "$#" -lt 7 ]
+then
+	echo usage: sitl_run.sh rc_script rcS_dir debugger program model src_path build_path
 	echo ""
 	exit 1
 fi
 
 # kill process names that might stil
 # be running from last time
-pkill gazebo
-pkill mainapp
-jmavsim_pid=`jps | grep Simulator | cut -d" " -f1`
+pkill -x gazebo || true
+pkill -x px4 || true
+pkill -x px4_$model || true
+
+jmavsim_pid=`ps aux | grep java | grep Simulator | cut -d" " -f1`
 if [ -n "$jmavsim_pid" ]
 then
 	kill $jmavsim_pid
 fi
 
-set -e
-
-cd $build_path/..
-cp Tools/posix_lldbinit $build_path/src/firmware/posix/.lldbinit
-cp Tools/posix.gdbinit $build_path/src/firmware/posix/.gdbinit
+cp $src_path/Tools/posix_lldbinit $working_dir/.lldbinit
+cp $src_path/Tools/posix.gdbinit $working_dir/.gdbinit
 
 SIM_PID=0
 
 if [ "$program" == "jmavsim" ] && [ ! -n "$no_sim" ]
 then
-	cd Tools/jMAVSim
-	ant create_run_jar copy_res
-	cd out/production
-	java -Djava.ext.dirs= -jar jmavsim_run.jar -udp 127.0.0.1:14560 &
+	$src_path/Tools/jmavsim_run.sh -r 500 &
 	SIM_PID=`echo $!`
 	cd ../..
 elif [ "$program" == "gazebo" ] && [ ! -n "$no_sim" ]
 then
 	if [ -x "$(command -v gazebo)" ]
 	then
-		# Set the plugin path so Gazebo finds our model and sim
-		export GAZEBO_PLUGIN_PATH=$curr_dir/build_gazebo:${GAZEBO_PLUGIN_PATH}
-		# Set the model path so Gazebo finds the airframes
-		export GAZEBO_MODEL_PATH=${GAZEBO_MODEL_PATH}:$curr_dir/Tools/sitl_gazebo/models
-		# The next line would disable online model lookup, can be commented in, in case of unstable behaviour.
-		# export GAZEBO_MODEL_DATABASE_URI=""
-		export SITL_GAZEBO_PATH=$curr_dir/Tools/sitl_gazebo
-		make --no-print-directory gazebo_build
+		if  [[ -z "$DONT_RUN" ]]
+		then
+			# Set the plugin path so Gazebo finds our model and sim
+			source $src_path/Tools/setup_gazebo.bash ${src_path} ${build_path}
 
-		gzserver --verbose $curr_dir/Tools/sitl_gazebo/worlds/${model}.world &
-		SIM_PID=`echo $!`
+			gzserver --verbose ${src_path}/Tools/sitl_gazebo/worlds/${model}.world &
+			SIM_PID=`echo $!`
 
-		if [[ -n "$HEADLESS" ]]; then
-			echo "not running gazebo gui"
-		else
-			gzclient --verbose &
-			GUI_PID=`echo $!`
+			if [[ -n "$HEADLESS" ]]; then
+				echo "not running gazebo gui"
+			else
+				# gzserver needs to be running to avoid a race. Since the launch
+				# is putting it into the background we need to avoid it by backing off
+				sleep 3
+				nice -n 20 gzclient --verbose &
+				GUI_PID=`echo $!`
+			fi
 		fi
 	else
 		echo "You need to have gazebo simulator installed!"
 		exit 1
 	fi
-elif [ "$program" == "replay" ] && [ ! -n "$no_sim" ]
-then
-	echo "Replaying logfile: $logfile"
-	# This is not a simulator, but a log file to replay
-
-	# Check if we need to creat a param file to allow user to change parameters
-	if ! [ -f "${build_path}/src/firmware/posix/rootfs/replay_params.txt" ]
-		then
-		touch ${build_path}/src/firmware/posix/rootfs/replay_params.txt
-	fi
 fi
 
-cd $build_path/src/firmware/posix
-
-if [ "$logfile" != "" ]
-then
-	cp $logfile rootfs/replay.px4log
-fi
+cd $working_dir
 
 # Do not exit on failure now from here on because we want the complete cleanup
 set +e
 
-# Start Java simulator
-if [ "$debugger" == "lldb" ]
+sitl_command="$sudo_enabled $sitl_bin $no_pxh $chroot_enabled $src_path $src_path/${rcS_dir}/${model}"
+
+echo SITL COMMAND: $sitl_command
+
+if [[ -n "$DONT_RUN" ]]
 then
-	lldb -- mainapp ../../../../${rc_script}_${program}_${model}
+    echo "Not running simulation (\$DONT_RUN is set)."
+# Start Java simulator
+elif [ "$debugger" == "lldb" ]
+then
+	lldb -- $sitl_command
 elif [ "$debugger" == "gdb" ]
 then
-	gdb --args mainapp ../../../../${rc_script}_${program}_${model}
+	gdb --args $sitl_command
 elif [ "$debugger" == "ddd" ]
 then
-	ddd --debugger gdb --args mainapp ../../../../${rc_script}_${program}_${model}
+	ddd --debugger gdb --args $sitl_command
 elif [ "$debugger" == "valgrind" ]
 then
-	valgrind ./mainapp ../../../../${rc_script}_${program}_${model}
+	valgrind --track-origins=yes --leak-check=full -v $sitl_command
+elif [ "$debugger" == "callgrind" ]
+then
+	valgrind --tool=callgrind -v $sitl_command
+elif [ "$debugger" == "ide" ]
+then
+	echo "######################################################################"
+	echo
+	echo "PX4 simulator not started, use your IDE to start PX4_${model} target."
+	echo "Hit enter to quit..."
+	echo
+	echo "######################################################################"
+	read
 else
-	$sudo_enabled ./mainapp $chroot_enabled ../../../../${rc_script}_${program}_${model}
+	$sitl_command
 fi
 
-if [ "$program" == "jmavsim" ]
+if [[ -z "$DONT_RUN" ]]
 then
-	kill -9 $SIM_PID
-elif [ "$program" == "gazebo" ]
-then
-	kill -9 $SIM_PID
-	if [[ ! -n "$HEADLESS" ]]; then
-		kill -9 $GUI_PID
+	if [ "$program" == "jmavsim" ]
+	then
+		pkill -9 -P $SIM_PID
+		kill -9 $SIM_PID
+	elif [ "$program" == "gazebo" ]
+	then
+		kill -9 $SIM_PID
+		if [[ ! -n "$HEADLESS" ]]; then
+			kill -9 $GUI_PID
+		fi
 	fi
 fi

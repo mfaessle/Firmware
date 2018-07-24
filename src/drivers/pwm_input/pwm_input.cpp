@@ -67,14 +67,12 @@
 #include "up_internal.h"
 #include "up_arch.h"
 
-#include "stm32.h"
 #include "stm32_gpio.h"
 #include "stm32_tim.h"
 #include <systemlib/err.h>
 
 #include <uORB/uORB.h>
 #include <uORB/topics/pwm_input.h>
-#include <uORB/topics/subsystem_info.h>
 
 #include <drivers/drv_device.h>
 #include <drivers/device/device.h>
@@ -263,11 +261,12 @@ private:
 
 };
 
-static int pwmin_tim_isr(int irq, void *context);
+static int pwmin_tim_isr(int irq, void *context, void *arg);
 static void pwmin_start();
 static void pwmin_info(void);
 static void pwmin_test(void);
 static void pwmin_reset(void);
+static void pwmin_usage(void);
 
 static PWMIN *g_dev;
 
@@ -321,17 +320,17 @@ void PWMIN::_timer_init(void)
 {
 	/* run with interrupts disabled in case the timer is already
 	 * setup. We don't want it firing while we are doing the setup */
-	irqstate_t flags = irqsave();
+	irqstate_t flags = px4_enter_critical_section();
 
 	/* configure input pin */
-	stm32_configgpio(GPIO_PWM_IN);
+	px4_arch_configgpio(GPIO_PWM_IN);
 
 	// XXX refactor this out of this driver
 	/* configure reset pin */
-	stm32_configgpio(GPIO_VDD_RANGEFINDER_EN);
+	px4_arch_configgpio(GPIO_VDD_RANGEFINDER_EN);
 
 	/* claim our interrupt vector */
-	irq_attach(PWMIN_TIMER_VECTOR, pwmin_tim_isr);
+	irq_attach(PWMIN_TIMER_VECTOR, pwmin_tim_isr, NULL);
 
 	/* Clear no bits, set timer enable bit.*/
 	modifyreg32(PWMIN_TIMER_POWER_REG, 0, PWMIN_TIMER_POWER_BIT);
@@ -373,7 +372,7 @@ void PWMIN::_timer_init(void)
 	/* enable interrupts */
 	up_enable_irq(PWMIN_TIMER_VECTOR);
 
-	irqrestore(flags);
+	px4_leave_critical_section(flags);
 
 	_timer_started = true;
 }
@@ -392,14 +391,14 @@ PWMIN::_freeze_test()
 void
 PWMIN::_turn_on()
 {
-	stm32_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 1);
+	px4_arch_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 1);
 }
 
 // XXX refactor this out of this driver
 void
 PWMIN::_turn_off()
 {
-	stm32_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 0);
+	px4_arch_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 0);
 }
 
 // XXX refactor this out of this driver
@@ -444,20 +443,17 @@ PWMIN::ioctl(struct file *filp, int cmd, unsigned long arg)
 				return -EINVAL;
 			}
 
-			irqstate_t flags = irqsave();
+			irqstate_t flags = px4_enter_critical_section();
 
 			if (!_reports->resize(arg)) {
-				irqrestore(flags);
+				px4_leave_critical_section(flags);
 				return -ENOMEM;
 			}
 
-			irqrestore(flags);
+			px4_leave_critical_section(flags);
 
 			return OK;
 		}
-
-	case SENSORIOCGQUEUEDEPTH:
-		return _reports->size();
 
 	case SENSORIOCRESET:
 		/* user has asked for the timer to be reset. This may
@@ -545,7 +541,7 @@ void PWMIN::print_info(void)
 /*
  * Handle the interrupt, gathering pulse data
  */
-static int pwmin_tim_isr(int irq, void *context)
+static int pwmin_tim_isr(int irq, void *context, void *arg)
 {
 	uint16_t status = rSR;
 	uint32_t period = rCCR_PWMIN_A;
@@ -651,12 +647,21 @@ static void pwmin_info(void)
 	exit(0);
 }
 
+static void pwmin_usage()
+{
+	PX4_ERR("unrecognized command, try 'start', 'info', 'reset' or 'test'");
+}
 
 /*
  * driver entry point
  */
 int pwm_input_main(int argc, char *argv[])
 {
+	if (argc < 2) {
+		pwmin_usage();
+		return -1;
+	}
+
 	const char *verb = argv[1];
 
 	/*
@@ -687,6 +692,6 @@ int pwm_input_main(int argc, char *argv[])
 		pwmin_reset();
 	}
 
-	errx(1, "unrecognized command, try 'start', 'info', 'reset' or 'test'");
-	return 0;
+	pwmin_usage();
+	return -1;
 }

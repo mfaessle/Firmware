@@ -56,8 +56,9 @@
  * @max 4
  * @value 0 None
  * @value 1 Warning
- * @value 2 Loiter
- * @value 3 Return to Land
+ * @value 2 Hold mode
+ * @value 3 Return mode
+ * @value 4 Terminate
  * @group Geofence
  */
 PARAM_DEFINE_INT32(GF_ACTION, 1);
@@ -106,24 +107,25 @@ PARAM_DEFINE_INT32(GF_COUNT, -1);
 /**
  * Max horizontal distance in meters.
  *
- * Set to > 0 to activate a geofence action if horizontal distance to home exceeds this value.
+ * Maximum horizontal distance in meters the vehicle can be from home before triggering a geofence action. Disabled if 0.
  *
  * @unit m
- * @min -1
- * @max 5000
+ * @min 0
+ * @max 10000
  * @increment 1
  * @group Geofence
  */
-PARAM_DEFINE_INT32(GF_MAX_HOR_DIST, -1);
+PARAM_DEFINE_FLOAT(GF_MAX_HOR_DIST, 0);
 
 /**
  * Max vertical distance in meters.
  *
- * Set to > 0 to activate a geofence action if vertical distance to home exceeds this value.
+ * Maximum vertical distance in meters the vehicle can be from home before triggering a geofence action. Disabled if 0.
  *
  * @unit m
- * @min -1
+ * @min 0
+ * @max 10000
  * @increment 1
  * @group Geofence
  */
-PARAM_DEFINE_INT32(GF_MAX_VER_DIST, -1);
+PARAM_DEFINE_FLOAT(GF_MAX_VER_DIST, 0);

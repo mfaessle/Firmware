@@ -30,14 +30,14 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
+
 px4_add_module(
 	MODULE drivers__rgbled
 	MAIN rgbled
 	COMPILE_FLAGS
-		-Os
 	SRCS
 		rgbled.cpp
 	DEPENDS
-		platforms__common
+		drivers__device
+		led
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 

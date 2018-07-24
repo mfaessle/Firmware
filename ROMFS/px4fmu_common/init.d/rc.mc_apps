@@ -1,49 +1,56 @@
 #!nsh
 #
-# Standard apps for multirotors:
-# att & pos estimator, att & pos control.
+# Standard apps for multirotors. Attitude/Position estimator, Attitude/Position control.
+#
+# NOTE: Script variables are declared/initialized/unset in the rcS script.
 #
 
-
-#---------------------------------------
-# Estimator group selction
-#
-# INAV
+###############################################################################
+#                       Begin Estimator Group Selection                       #
+###############################################################################
+# INAV (deprecated).
 if param compare SYS_MC_EST_GROUP 0
 then
-	attitude_estimator_q start
-	position_estimator_inav start
+	echo "ERROR [init] Estimator INAV deprecated. Using EKF2"
+	param set SYS_MC_EST_GROUP 2
+	param save
 fi
 
 # LPE
 if param compare SYS_MC_EST_GROUP 1
 then
-	attitude_estimator_q start
-	local_position_estimator start
+	# Try to start LPE. If it fails, start EKF2 as a default
+	# Unfortunately we do not build it on px4fmu-v2 due to a limited flash.
+	if attitude_estimator_q start
+	then
+		local_position_estimator start
+	else
+		echo "ERROR [init] Estimator LPE not available. Using EKF2"
+		param set SYS_MC_EST_GROUP 2
+		param save
+	fi
 fi
 
-# EKF
+# EKF2
 if param compare SYS_MC_EST_GROUP 2
 then
 	ekf2 start
 fi
-#---------------------------------------
-
-if mc_att_control start
-then
-else
-	# try the multiplatform version
-	mc_att_control_m start
-fi
-
-if mc_pos_control start
-then
-else
-	# try the multiplatform version
-	mc_pos_control_m start
-fi
+###############################################################################
+#                        End Estimator Group Selection                        #
+###############################################################################
 
 #
-# Start Land Detector
+# Start Multicopter Attitude Controller.
+#
+mc_att_control start
+
+#
+# Start Multicopter Position Controller.
+#
+mc_pos_control start
+
+#
+# Start Multicopter Land Detector.
 #
 land_detector start multicopter

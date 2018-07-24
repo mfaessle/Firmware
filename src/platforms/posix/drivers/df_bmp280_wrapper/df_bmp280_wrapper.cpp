@@ -51,7 +51,7 @@
 #include <px4_getopt.h>
 #include <errno.h>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
 
 #include <drivers/drv_baro.h>
@@ -115,16 +115,6 @@ DfBmp280Wrapper::~DfBmp280Wrapper()
 
 int DfBmp280Wrapper::start()
 {
-	// TODO: don't publish garbage here
-	baro_report baro_report = {};
-	_baro_topic = orb_advertise_multi(ORB_ID(sensor_baro), &baro_report,
-					  &_baro_orb_class_instance, ORB_PRIO_DEFAULT);
-
-	if (_baro_topic == nullptr) {
-		PX4_ERR("sensor_baro advert fail");
-		return -1;
-	}
-
 	/* Init device and start sensor. */
 	int ret = init();
 
@@ -163,47 +153,20 @@ int DfBmp280Wrapper::_publish(struct baro_sensor_data &data)
 	baro_report baro_report = {};
 	baro_report.timestamp = hrt_absolute_time();
 
-	baro_report.pressure = data.pressure_pa;
+	baro_report.pressure = data.pressure_pa / 100.0f; // to mbar
 	baro_report.temperature = data.temperature_c;
-
-	// TODO: verify this, it's just copied from the MS5611 driver.
-
-	// Constant for now
-	const float MSL_PRESSURE = 101325.0f;
-
-	/* tropospheric properties (0-11km) for standard atmosphere */
-	const double T1 = 15.0 + 273.15;	/* temperature at base height in Kelvin */
-	const double a  = -6.5 / 1000;	/* temperature gradient in degrees per metre */
-	const double g  = 9.80665;	/* gravity constant in m/s/s */
-	const double R  = 287.05;	/* ideal gas constant in J/kg/K */
-
-	/* current pressure at MSL in kPa */
-	double p1 = MSL_PRESSURE / 1000.0;
-
-	/* measured pressure in kPa */
-	double p = data.pressure_pa / 1000.0;
-
-	/*
-	 * Solve:
-	 *
-	 *     /        -(aR / g)     \
-	 *    | (p / p1)          . T1 | - T1
-	 *     \                      /
-	 * h = -------------------------------  + h1
-	 *                   a
-	 */
-	baro_report.altitude = (((pow((p / p1), (-(a * R) / g))) * T1) - T1) / a;
 
 	// TODO: when is this ever blocked?
 	if (!(m_pub_blocked)) {
 
-		if (_baro_topic != nullptr) {
+		if (_baro_topic == nullptr) {
+			_baro_topic = orb_advertise_multi(ORB_ID(sensor_baro), &baro_report,
+							  &_baro_orb_class_instance, ORB_PRIO_DEFAULT);
+
+		} else {
 			orb_publish(ORB_ID(sensor_baro), _baro_topic, &baro_report);
 		}
 	}
-
-	/* Notify anyone waiting for data. */
-	DevMgr::updateNotify(*this);
 
 	perf_end(_baro_sample_perf);
 

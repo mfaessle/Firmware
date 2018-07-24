@@ -1,47 +1,38 @@
-include(posix/px4_impl_posix)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/cmake_hexagon")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PX4_SOURCE_DIR}/cmake/cmake_hexagon")
 
 # Use build stubs unless explicitly set not to
 if("${DSPAL_STUBS_ENABLE}" STREQUAL "")
 	set(DSPAL_STUBS_ENABLE "1")
 endif()
 
-set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/toolchains/Toolchain-arm-linux-gnueabihf.cmake)
+set(CMAKE_TOOLCHAIN_FILE ${PX4_SOURCE_DIR}/cmake/cmake_hexagon/toolchain/Toolchain-arm-linux-gnueabihf.cmake)
 
-set(config_generate_parameters_scope ALL)
+set(DISABLE_PARAMS_MODULE_SCOPING TRUE)
+
+# Get $QC_SOC_TARGET from environment if existing.
+if (DEFINED ENV{QC_SOC_TARGET})
+	set(QC_SOC_TARGET $ENV{QC_SOC_TARGET})
+else()
+	set(QC_SOC_TARGET "APQ8074")
+endif()
+
+add_definitions(-DORB_COMMUNICATOR)
 
 set(config_module_list
-	drivers/device
-	drivers/boards/sitl
-	drivers/led
+	drivers/linux_sbus
 
 	systemcmds/param
 	systemcmds/ver
 
 	modules/mavlink
 
-	modules/param
-	modules/systemlib
-	modules/uORB
 	modules/sensors
 	modules/dataman
-	modules/sdlog2
 	modules/logger
 	modules/simulator
 	modules/commander
-	modules/load_mon
 
-	lib/mathlib
-	lib/mathlib/math/filter
-	lib/geo
-	lib/geo_lookup
-	lib/conversion
-	lib/DriverFramework/framework
-
-	platforms/common
-	platforms/posix/px4_layer
-	platforms/posix/work_queue
 	modules/muorb/krait
 	)
 

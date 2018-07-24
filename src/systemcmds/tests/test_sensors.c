@@ -53,9 +53,7 @@
 
 #include <arch/board/board.h>
 
-//#include <nuttx/spi.h>
-
-#include "tests.h"
+#include "tests_main.h"
 
 #include <drivers/drv_gyro.h>
 #include <drivers/drv_accel.h>
@@ -253,8 +251,7 @@ baro(int argc, char *argv[], const char *path)
 		return ERROR;
 
 	} else {
-		printf("\tBARO pressure: %8.4f mbar\talt: %8.4f m\ttemp: %8.4f deg C\n", (double)buf.pressure, (double)buf.altitude,
-		       (double)buf.temperature);
+		printf("\tBARO pressure: %8.4f mbar\t temp: %8.4f deg C\n", (double)buf.pressure, (double)buf.temperature);
 	}
 
 	/* Let user know everything is ok */

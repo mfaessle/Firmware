@@ -1,4 +1,6 @@
-include(qurt/px4_impl_qurt)
+include(common/px4_git)
+px4_add_git_submodule(TARGET git_cmake_hexagon PATH "cmake/cmake_hexagon")
+
 
 if ("$ENV{HEXAGON_SDK_ROOT}" STREQUAL "")
 	message(FATAL_ERROR "Enviroment variable HEXAGON_SDK_ROOT must be set")
@@ -7,24 +9,39 @@ else()
 endif()
 
 set(CONFIG_SHMEM "1")
+add_definitions(-DORB_COMMUNICATOR)
 
-set(config_generate_parameters_scope ALL)
+# Get $QC_SOC_TARGET from environment if existing.
+if (DEFINED ENV{QC_SOC_TARGET})
+	set(QC_SOC_TARGET $ENV{QC_SOC_TARGET})
+else()
+	set(QC_SOC_TARGET "APQ8074")
+endif()
 
-set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/cmake_hexagon/toolchain/Toolchain-qurt.cmake)
+# Disable the creation of the parameters.xml file by scanning individual
+# source files, and scan all source files.  This will create a parameters.xml
+# file that contains all possible parameters, even if the associated module
+# is not used.  This is necessary for parameter synchronization between the
+# ARM and DSP processors.
+set(DISABLE_PARAMS_MODULE_SCOPING TRUE)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/cmake_hexagon")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PX4_SOURCE_DIR}/cmake/cmake_hexagon")
+include(toolchain/Toolchain-qurt)
+include(qurt_flags)
+include_directories(${HEXAGON_SDK_INCLUDES})
+
 
 set(config_module_list
 	#
 	# Board support modules
 	#
-	drivers/device
 	modules/sensors
 	platforms/posix/drivers/df_mpu9250_wrapper
 	platforms/posix/drivers/df_bmp280_wrapper
 	platforms/posix/drivers/df_hmc5883_wrapper
 	platforms/posix/drivers/df_trone_wrapper
 	platforms/posix/drivers/df_isl29501_wrapper
+	platforms/posix/drivers/df_ltc2946_wrapper
 
 	#
 	# System commands
@@ -32,12 +49,12 @@ set(config_module_list
 	systemcmds/param
 
 	#
-	# Estimation modules (EKF/ SO3 / other filters)
+	# Estimation modules
 	#
-	#modules/attitude_estimator_ekf
-	modules/ekf_att_pos_estimator
 	modules/attitude_estimator_q
 	modules/position_estimator_inav
+	modules/local_position_estimator
+	modules/landing_target_estimator
 	modules/ekf2
 
 	#
@@ -49,42 +66,16 @@ set(config_module_list
 	#
 	# Library modules
 	#
-	modules/param
-	modules/systemlib
-	modules/systemlib/mixer
-	modules/uORB
 	modules/commander
 	modules/land_detector
-	modules/load_mon
 
 	#
 	# PX4 drivers
 	#
 	drivers/gps
-	drivers/uart_esc
+	drivers/spektrum_rc
 	drivers/qshell/qurt
-
-	#
-	# Libraries
-	#
-	lib/controllib
-	lib/mathlib
-	lib/mathlib/math/filter
-	lib/geo
-	lib/ecl
-	lib/geo_lookup
-	lib/conversion
-	lib/terrain_estimation
-	lib/runway_takeoff
-	lib/tailsitter_recovery
-	lib/DriverFramework/framework
-
-	#
-	# QuRT port
-	#
-	platforms/common
-	platforms/qurt/px4_layer
-	platforms/posix/work_queue
+	drivers/snapdragon_pwm_out
 
 	#
 	# sources for muorb over fastrpc
@@ -98,4 +89,5 @@ set(config_df_driver_list
 	hmc5883
 	trone
 	isl29501
+	ltc2946
 	)

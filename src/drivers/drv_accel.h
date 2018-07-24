@@ -82,12 +82,6 @@ struct accel_calibration_s {
 /** return the accel internal sample rate in Hz */
 #define ACCELIOCGSAMPLERATE	_ACCELIOC(1)
 
-/** set the accel internal lowpass filter to no lower than (arg) Hz */
-#define ACCELIOCSLOWPASS	_ACCELIOC(2)
-
-/** return the accel internal lowpass filter in Hz */
-#define ACCELIOCGLOWPASS	_ACCELIOC(3)
-
 /** set the accel scaling constants to the structure pointed to by (arg) */
 #define ACCELIOCSSCALE		_ACCELIOC(5)
 
@@ -102,5 +96,11 @@ struct accel_calibration_s {
 
 /** get the result of a sensor self-test */
 #define ACCELIOCSELFTEST	_ACCELIOC(9)
+
+/** determine if hardware is external or onboard */
+#define ACCELIOCGEXTERNAL	_ACCELIOC(12)
+
+/** get the current accel type */
+#define ACCELIOCTYPE		_ACCELIOC(13)
 
 #endif /* _DRV_ACCEL_H */

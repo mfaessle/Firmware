@@ -43,7 +43,7 @@
 /**
  * Loiter radius (FW only)
  *
- * Default value of loiter radius for missions, loiter, RTL, etc. (fixedwing only).
+ * Default value of loiter radius for missions, Hold mode, Return mode, etc. (fixedwing only).
  *
  * @unit m
  * @min 25
@@ -58,6 +58,7 @@ PARAM_DEFINE_FLOAT(NAV_LOITER_RAD, 50.0f);
  * Acceptance Radius
  *
  * Default acceptance radius, overridden by acceptance radius of waypoint if set.
+ * For fixed wing the L1 turning distance is used for horizontal acceptance.
  *
  * @unit m
  * @min 0.05
@@ -69,6 +70,34 @@ PARAM_DEFINE_FLOAT(NAV_LOITER_RAD, 50.0f);
 PARAM_DEFINE_FLOAT(NAV_ACC_RAD, 10.0f);
 
 /**
+ * FW Altitude Acceptance Radius
+ *
+ * Acceptance radius for fixedwing altitude.
+ *
+ * @unit m
+ * @min 0.05
+ * @max 200.0
+ * @decimal 1
+ * @increment 0.5
+ * @group Mission
+ */
+PARAM_DEFINE_FLOAT(NAV_FW_ALT_RAD, 10.0f);
+
+/**
+ * MC Altitude Acceptance Radius
+ *
+ * Acceptance radius for multicopter altitude.
+ *
+ * @unit m
+ * @min 0.05
+ * @max 200.0
+ * @decimal 1
+ * @increment 0.5
+ * @group Mission
+ */
+PARAM_DEFINE_FLOAT(NAV_MC_ALT_RAD, 0.8f);
+
+/**
  * Set data link loss failsafe mode
  *
  * The data link loss failsafe will only be entered after a timeout,
@@ -78,9 +107,12 @@ PARAM_DEFINE_FLOAT(NAV_ACC_RAD, 10.0f);
  * of that competition.
  *
  * @value 0 Disabled
- * @value 1 Loiter
- * @value 2 Return to Land
- * @value 3 Land at current position
+ * @value 1 Hold mode
+ * @value 2 Return mode
+ * @value 3 Land mode
+ * @value 4 Data Link Auto Recovery (CASA Outback Challenge rules)
+ * @value 5 Terminate
+ * @value 6 Lockdown
  *
  * @group Mission
  */
@@ -96,13 +128,31 @@ PARAM_DEFINE_INT32(NAV_DLL_ACT, 0);
  * which are only recommended to participants of that competition.
  *
  * @value 0 Disabled
- * @value 1 Loiter
- * @value 2 Return to Land
- * @value 3 Land at current position
+ * @value 1 Hold mode
+ * @value 2 Return mode
+ * @value 3 Land mode
+ * @value 4 RC Auto Recovery (CASA Outback Challenge rules)
+ * @value 5 Terminate
+ * @value 6 Lockdown
  *
  * @group Mission
  */
-PARAM_DEFINE_INT32(NAV_RCL_ACT, 0);
+PARAM_DEFINE_INT32(NAV_RCL_ACT, 2);
+
+/**
+ * Set traffic avoidance mode
+ *
+ * Enabling this will allow the system to respond
+ * to transponder data from e.g. ADSB transponders
+ *
+ * @value 0 Disabled
+ * @value 1 Warn only
+ * @value 2 Return mode
+ * @value 3 Land mode
+ *
+ * @group Mission
+ */
+PARAM_DEFINE_INT32(NAV_TRAFF_AVOID, 1);
 
 /**
  * Airfield home Lat
@@ -140,3 +190,11 @@ PARAM_DEFINE_INT32(NAV_AH_LON, 1518423250);
  * @group Data Link Loss
  */
 PARAM_DEFINE_FLOAT(NAV_AH_ALT, 600.0f);
+
+/**
+ * Force VTOL mode takeoff and land
+ *
+ * @boolean
+ * @group Mission
+ */
+PARAM_DEFINE_INT32(NAV_FORCE_VT, 1);

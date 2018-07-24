@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2014 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2017 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,6 +47,7 @@
  */
 
 #include <px4_config.h>
+#include <px4_defines.h>
 
 #include <drivers/device/i2c.h>
 
@@ -64,9 +65,8 @@
 #include <nuttx/wqueue.h>
 #include <nuttx/clock.h>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
-#include <systemlib/systemlib.h>
 
 #include <uORB/uORB.h>
 #include <uORB/topics/actuator_controls.h>
@@ -108,17 +108,11 @@
 				     */
 #define PCA9685_SCALE ((PCA9685_PWMMAX - PCA9685_PWMCENTER)/(M_DEG_TO_RAD_F * PCA9685_MAXSERVODEG)) // scales from rad to PWM
 
-/* oddly, ERROR is not defined for c++ */
-#ifdef ERROR
-# undef ERROR
-#endif
-static const int ERROR = -1;
-
 class PCA9685 : public device::I2C
 {
 public:
 	PCA9685(int bus = PCA9685_BUS, uint8_t address = ADDR);
-	virtual ~PCA9685();
+	virtual ~PCA9685() = default;
 
 
 	virtual int		init();
@@ -141,7 +135,7 @@ private:
 
 	int			_actuator_controls_sub;
 	struct actuator_controls_s  _actuator_controls;
-	uint16_t	    	_current_values[NUM_ACTUATOR_CONTROLS]; /**< stores the current pwm output
+	uint16_t	    	_current_values[actuator_controls_s::NUM_ACTUATOR_CONTROLS]; /**< stores the current pwm output
 										  values as sent to the setPin() */
 
 	bool _mode_on_initialized;  /** Set to true after the first call of i2cpwm in mode IOX_MODE_ON */
@@ -202,10 +196,6 @@ PCA9685::PCA9685(int bus, uint8_t address) :
 	memset(&_work, 0, sizeof(_work));
 	memset(_msg, 0, sizeof(_msg));
 	memset(_current_values, 0, sizeof(_current_values));
-}
-
-PCA9685::~PCA9685()
-{
 }
 
 int
@@ -331,7 +321,7 @@ PCA9685::i2cpwm()
 		if (updated) {
 			orb_copy(ORB_ID(actuator_controls_2), _actuator_controls_sub, &_actuator_controls);
 
-			for (int i = 0; i < NUM_ACTUATOR_CONTROLS; i++) {
+			for (int i = 0; i < actuator_controls_s::NUM_ACTUATOR_CONTROLS; i++) {
 				/* Scale the controls to PWM, first multiply by pi to get rad,
 				 * the control[i] values are on the range -1 ... 1 */
 				uint16_t new_value = PCA9685_PWMCENTER +
@@ -421,7 +411,7 @@ PCA9685::setPin(uint8_t num, uint16_t val, bool invert)
 		}
 	}
 
-	return ERROR;
+	return PX4_ERROR;
 }
 
 int

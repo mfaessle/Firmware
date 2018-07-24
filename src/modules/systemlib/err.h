@@ -67,36 +67,32 @@
 
 #include <px4_log.h>
 #include <stdarg.h>
-#include "visibility.h"
+#include <errno.h>
+#include <stdlib.h>
 
 __BEGIN_DECLS
 
-__EXPORT const char *getprogname(void);
 
-#ifdef __PX4_POSIX
-
-#include <errno.h>
-#include <px4_tasks.h>
-#define err(eval, ...)					do { PX4_ERR(__VA_ARGS__); PX4_ERR("Task exited with errno=%i\n", errno); \
-		px4_task_exit(eval); } while(0)
-#define errx(eval, ...)				do { PX4_ERR(__VA_ARGS__); px4_task_exit(eval); } while(0)
-#define warn(...) 					PX4_WARN(__VA_ARGS__)
-#define warnx(...) 					PX4_WARN(__VA_ARGS__)
-
+#ifdef __PX4_NUTTX
+#define EXIT(eval) exit(eval)
 #else
-__EXPORT void	err(int eval, const char *fmt, ...)		__attribute__((noreturn, format(printf, 2, 3)));
-__EXPORT void	verr(int eval, const char *fmt, va_list)	__attribute__((noreturn, format(printf, 2, 0)));
-__EXPORT void	errc(int eval, int code, const char *fmt, ...)	__attribute__((noreturn, format(printf, 3, 4)));
-__EXPORT void	verrc(int eval, int code, const char *fmt, va_list) __attribute__((noreturn, format(printf, 3, 0)));
-__EXPORT void	errx(int eval, const char *fmt, ...) 		__attribute__((noreturn, format(printf, 2, 3)));
-__EXPORT void	verrx(int eval, const char *fmt, va_list)	__attribute__((noreturn, format(printf, 2, 0)));
-__EXPORT void	warn(const char *fmt, ...)			__attribute__((format(printf, 1, 2)));
-__EXPORT void	vwarn(const char *fmt, va_list)			__attribute__((format(printf, 1, 0)));
-__EXPORT void	warnc(int code, const char *fmt, ...)		__attribute__((format(printf, 2, 3)));
-__EXPORT void	vwarnc(int code, const char *fmt, va_list)	__attribute__((format(printf, 2, 0)));
-__EXPORT void	warnx(const char *fmt, ...)			__attribute__((format(printf, 1, 2)));
-__EXPORT void	vwarnx(const char *fmt, va_list)		__attribute__((format(printf, 1, 0)));
+#define EXIT(eval) px4_task_exit(eval)
 #endif
+
+
+#define err(eval, ...)		do { \
+		PX4_ERR(__VA_ARGS__); \
+		PX4_ERR("Task exited with errno=%i\n", errno); \
+		EXIT(eval); \
+	} while(0)
+
+#define errx(eval, ...)		do { \
+		PX4_ERR(__VA_ARGS__); \
+		EXIT(eval); \
+	} while(0)
+
+#define warn(...) 		PX4_WARN(__VA_ARGS__)
+#define warnx(...) 		PX4_WARN(__VA_ARGS__)
 
 __END_DECLS
 

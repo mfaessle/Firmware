@@ -6,8 +6,8 @@ extern orb_advert_t mavlink_log_pub;
 
 // required number of samples for sensor
 // to initialize
-static const uint32_t 		REQ_MOCAP_INIT_COUNT = 20;
-static const uint32_t 		MOCAP_TIMEOUT =     200000;	// 0.2 s
+static const uint32_t		REQ_MOCAP_INIT_COUNT = 20;
+static const uint32_t		MOCAP_TIMEOUT = 200000;	// 0.2 s
 
 void BlockLocalPositionEstimator::mocapInit()
 {
@@ -21,7 +21,6 @@ void BlockLocalPositionEstimator::mocapInit()
 
 	// if finished
 	if (_mocapStats.getCount() > REQ_MOCAP_INIT_COUNT) {
-		_mocapHome = _mocapStats.getMean();
 		mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] mocap position init: "
 					     "%5.2f, %5.2f, %5.2f m std %5.2f, %5.2f, %5.2f m",
 					     double(_mocapStats.getMean()(0)),
@@ -30,12 +29,13 @@ void BlockLocalPositionEstimator::mocapInit()
 					     double(_mocapStats.getStdDev()(0)),
 					     double(_mocapStats.getStdDev()(1)),
 					     double(_mocapStats.getStdDev()(2)));
-		_mocapInitialized = true;
-		_mocapFault = FAULT_NONE;
+		_sensorTimeout &= ~SENSOR_MOCAP;
+		_sensorFault &= ~SENSOR_MOCAP;
 
-		if (!_altHomeInitialized) {
-			_altHomeInitialized = true;
-			_altHome = _mocapHome(2);
+		if (!_altOriginInitialized) {
+			_altOriginInitialized = true;
+			_altOriginGlobal = false;
+			_altOrigin = 0;
 		}
 	}
 }
@@ -47,7 +47,7 @@ int BlockLocalPositionEstimator::mocapMeasure(Vector<float, n_y_mocap> &y)
 	y(Y_mocap_y) = _sub_mocap.get().y;
 	y(Y_mocap_z) = _sub_mocap.get().z;
 	_mocapStats.update(y);
-	_time_last_mocap = _sub_mocap.get().timestamp_boot;
+	_time_last_mocap = _sub_mocap.get().timestamp;
 	return OK;
 }
 
@@ -57,9 +57,6 @@ void BlockLocalPositionEstimator::mocapCorrect()
 	Vector<float, n_y_mocap> y;
 
 	if (mocapMeasure(y) != OK) { return; }
-
-	// make measurement relative to home
-	y -= _mocapHome;
 
 	// mocap measurement matrix, measures position
 	Matrix<float, n_y_mocap, n_x> C;
@@ -71,43 +68,57 @@ void BlockLocalPositionEstimator::mocapCorrect()
 	// noise matrix
 	Matrix<float, n_y_mocap, n_y_mocap> R;
 	R.setZero();
-	float mocap_p_var = _mocap_p_stddev.get()* \
+	float mocap_p_var = _mocap_p_stddev.get() * \
 			    _mocap_p_stddev.get();
 	R(Y_mocap_x, Y_mocap_x) = mocap_p_var;
 	R(Y_mocap_y, Y_mocap_y) = mocap_p_var;
 	R(Y_mocap_z, Y_mocap_z) = mocap_p_var;
 
 	// residual
-	Matrix<float, n_y_mocap, n_y_mocap> S_I = inv<float, n_y_mocap>((C * _P * C.transpose()) + R);
-	Matrix<float, n_y_mocap, 1> r = y - C * _x;
+	Vector<float, n_y_mocap> r = y - C * _x;
+	// residual covariance
+	Matrix<float, n_y_mocap, n_y_mocap> S = C * _P * C.transpose() + R;
+
+	// publish innovations
+	for (int i = 0; i < 3; i++) {
+		_pub_innov.get().vel_pos_innov[i] = r(i);
+		_pub_innov.get().vel_pos_innov_var[i] = S(i, i);
+	}
+
+	for (int i = 3; i < 6; i++) {
+		_pub_innov.get().vel_pos_innov[i] = 0;
+		_pub_innov.get().vel_pos_innov_var[i] = 1;
+	}
+
+	// residual covariance, (inverse)
+	Matrix<float, n_y_mocap, n_y_mocap> S_I = inv<float, n_y_mocap>(S);
 
 	// fault detection
 	float beta = (r.transpose() * (S_I * r))(0, 0);
 
 	if (beta > BETA_TABLE[n_y_mocap]) {
-		if (_mocapFault < FAULT_MINOR) {
+		if (!(_sensorFault & SENSOR_MOCAP)) {
 			//mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] mocap fault, beta %5.2f", double(beta));
-			_mocapFault = FAULT_MINOR;
+			_sensorFault |= SENSOR_MOCAP;
 		}
 
-	} else if (_mocapFault) {
-		_mocapFault = FAULT_NONE;
+	} else if (_sensorFault & SENSOR_MOCAP) {
+		_sensorFault &= ~SENSOR_MOCAP;
 		//mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] mocap OK");
 	}
 
-	// kalman filter correction if no fault
-	if (_mocapFault < fault_lvl_disable) {
-		Matrix<float, n_x, n_y_mocap> K = _P * C.transpose() * S_I;
-		_x += K * r;
-		_P -= K * C * _P;
-	}
+	// kalman filter correction always
+	Matrix<float, n_x, n_y_mocap> K = _P * C.transpose() * S_I;
+	Vector<float, n_x> dx = K * r;
+	_x += dx;
+	_P -= K * C * _P;
 }
 
 void BlockLocalPositionEstimator::mocapCheckTimeout()
 {
 	if (_timeStamp - _time_last_mocap > MOCAP_TIMEOUT) {
-		if (_mocapInitialized) {
-			_mocapInitialized = false;
+		if (!(_sensorTimeout & SENSOR_MOCAP)) {
+			_sensorTimeout |= SENSOR_MOCAP;
 			_mocapStats.reset();
 			mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] mocap timeout ");
 		}

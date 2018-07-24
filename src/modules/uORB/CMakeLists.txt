@@ -32,47 +32,20 @@
 ############################################################################
 
 # this includes the generated topics directory
-include_directories(
-	${CMAKE_CURRENT_BINARY_DIR}
-	)
-
-link_libraries(msg_gen)
-
-set(SRCS
-	uORBUtils.cpp
-	uORB.cpp
-	uORBMain.cpp
-	Publication.cpp
-	Subscription.cpp
-	uORBManager.cpp
-	)
-
-if(${OS} STREQUAL "nuttx")
-	list(APPEND SRCS
-		uORBDevices_nuttx.cpp
-		)
-elseif(${OS} STREQUAL "posix")
-	list(APPEND SRCS
-		uORBDevices_posix.cpp
-		)
-elseif(${OS} STREQUAL "posix-arm")
-	list(APPEND SRCS
-		uORBDevices_posix.cpp
-		)
-elseif(${OS} STREQUAL "qurt")
-	list(APPEND SRCS
-		uORBDevices_posix.cpp
-		)
-endif()
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 px4_add_module(
 	MODULE modules__uORB
 	MAIN uorb
-	STACK_MAIN 2048
-	COMPILE_FLAGS
-		-Os
-	SRCS ${SRCS}
+	STACK_MAIN 2100
+	SRCS
+		Publication.cpp
+		Subscription.cpp
+		uORB.cpp
+		uORBDevices.cpp
+		uORBMain.cpp
+		uORBManager.cpp
+		uORBUtils.cpp
 	DEPENDS
-		platforms__common
+		uorb_msgs
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 

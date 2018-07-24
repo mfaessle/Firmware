@@ -30,16 +30,9 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-include_directories("../../uORB")
 
-px4_add_module(
-	MODULE modules__muorb__adsp
-	COMPILE_FLAGS
-		-Os
-	SRCS
-		px4muorb.cpp
-		uORBFastRpcChannel.cpp
-	DEPENDS
-		platforms__common
-	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 
+px4_add_library(modules__muorb__adsp
+	px4muorb.cpp
+	uORBFastRpcChannel.cpp
+)
+target_include_directories(modules__muorb__adsp PRIVATE ${PX4_SOURCE_DIR}/src/modules/uORB)

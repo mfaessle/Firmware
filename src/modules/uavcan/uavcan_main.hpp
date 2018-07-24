@@ -48,12 +48,13 @@
 #include <uavcan/helpers/heap_based_pool_allocator.hpp>
 #include <uavcan/protocol/global_time_sync_master.hpp>
 #include <uavcan/protocol/global_time_sync_slave.hpp>
+#include <uavcan/protocol/node_status_monitor.hpp>
 #include <uavcan/protocol/param/GetSet.hpp>
 #include <uavcan/protocol/param/ExecuteOpcode.hpp>
 #include <uavcan/protocol/RestartNode.hpp>
 
 #include <drivers/device/device.h>
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 
 #include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/actuator_outputs.h>
@@ -72,10 +73,6 @@
 
 // we add two to allow for actuator_direct and busevent
 #define UAVCAN_NUM_POLL_FDS (NUM_ACTUATOR_CONTROL_GROUPS_UAVCAN+2)
-
-// IOCTL control codes
-static constexpr unsigned UAVCANIOCBASE = 0x7800;
-static constexpr unsigned UAVCANIOC_HARDPOINT_SET = _PX4_IOC(UAVCANIOCBASE, 0x10);
 
 /**
  * A UAVCAN node.
@@ -103,11 +100,11 @@ class UavcanNode : public device::CDev
 	 */
 
 	static constexpr unsigned RxQueueLenPerIface	= FramePerMSecond * PollTimeoutMs; // At
-	static constexpr unsigned StackSize		= 1800;
+	static constexpr unsigned StackSize		= 2400;
 
 public:
 	typedef uavcan_stm32::CanInitHelper<RxQueueLenPerIface> CanInitHelper;
-	enum eServerAction {None, Start, Stop, CheckFW , Busy};
+	enum eServerAction {None, Start, Stop, CheckFW, Busy};
 
 	UavcanNode(uavcan::ICanDriver &can_driver, uavcan::ISystemClock &system_clock);
 
@@ -144,8 +141,6 @@ public:
 	int			 get_param(int remote_node_id, const char *name);
 	int			 reset_node(int remote_node_id);
 
-
-
 private:
 	void		fill_node_info();
 	int		init(uavcan::NodeID node_id);
@@ -157,6 +152,7 @@ private:
 	int		request_fw_check();
 	int		print_params(uavcan::protocol::param::GetSet::Response &resp);
 	int		get_set_param(int nodeid, const char *name, uavcan::protocol::param::GetSet::Request &req);
+	void 		update_params();
 	void		set_setget_response(uavcan::protocol::param::GetSet::Response *resp)
 	{
 		_setget_response = resp;
@@ -191,6 +187,7 @@ private:
 	UavcanHardpointController	_hardpoint_controller;
 	uavcan::GlobalTimeSyncMaster	_time_sync_master;
 	uavcan::GlobalTimeSyncSlave	_time_sync_slave;
+	uavcan::NodeStatusMonitor	_node_status_monitor;
 
 	List<IUavcanSensorBridge *>	_sensor_bridges;		///< List of active sensor bridges
 
@@ -203,6 +200,7 @@ private:
 	orb_id_t			_control_topics[NUM_ACTUATOR_CONTROL_GROUPS_UAVCAN] = {};
 	pollfd				_poll_fds[UAVCAN_NUM_POLL_FDS] = {};
 	unsigned			_poll_fds_num = 0;
+	int32_t 			_idle_throttle_when_armed = 0;
 
 	int				_actuator_direct_sub = -1;   ///< uORB subscription of the actuator_direct topic
 	uint8_t				_actuator_direct_poll_fd_num = 0;
@@ -210,12 +208,12 @@ private:
 
 	actuator_outputs_s		_outputs = {};
 
+	perf_counter_t			_perf_control_latency;
+
+	bool 				_airmode = false;
+
 	// index into _poll_fds for each _control_subs handle
 	uint8_t				_poll_ids[NUM_ACTUATOR_CONTROL_GROUPS_UAVCAN];
-
-	perf_counter_t _perfcnt_node_spin_elapsed		= perf_alloc(PC_ELAPSED, "uavcan_node_spin_elapsed");
-	perf_counter_t _perfcnt_esc_mixer_output_elapsed	= perf_alloc(PC_ELAPSED, "uavcan_esc_mixer_output_elapsed");
-	perf_counter_t _perfcnt_esc_mixer_total_elapsed		= perf_alloc(PC_ELAPSED, "uavcan_esc_mixer_total_elapsed");
 
 	void handle_time_sync(const uavcan::TimerEvent &);
 
