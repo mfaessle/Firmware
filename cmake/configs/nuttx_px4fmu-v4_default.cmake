@@ -114,10 +114,6 @@ set(config_module_list
 	modules/dataman
 
 	#
-	# Matthias
-	#
-	modules/fw_manual_assist
-
 	# OBC challenge
 	#
 	examples/bottle_drop
@@ -125,7 +121,7 @@ set(config_module_list
 	#
 	# Rover apps
 	#
-	#examples/rover_steering_control
+	examples/rover_steering_control
 
 	#
 	# Segway
