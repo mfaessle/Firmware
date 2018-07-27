@@ -104,6 +104,11 @@ set(config_module_list
 	modules/vtol_att_control
 
 	#
+	# Matthias
+	#
+	modules/mf_fw_control
+
+	#
 	# Logging
 	#
 	modules/logger
