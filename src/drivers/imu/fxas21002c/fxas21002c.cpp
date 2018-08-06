@@ -736,9 +736,6 @@ FXAS21002C::ioctl(struct file *filp, int cmd, unsigned long arg)
 		/* convert to dps and round */
 		return (unsigned long)(_gyro_range_rad_s * 180.0f / M_PI_F + 0.5f);
 
-	case GYROIOCSELFTEST:
-		return self_test();
-
 	default:
 		/* give it to the superclass */
 		return SPI::ioctl(filp, cmd, arg);
@@ -748,14 +745,12 @@ FXAS21002C::ioctl(struct file *filp, int cmd, unsigned long arg)
 int
 FXAS21002C::self_test()
 {
-
 	if (_read == 0) {
 		return 1;
 	}
 
 	return 0;
 }
-
 
 uint8_t
 FXAS21002C::read_reg(unsigned reg)
@@ -1071,7 +1066,6 @@ FXAS21002C::measure()
 	gyro_report.z_integral = gval_integrated(2);
 
 	gyro_report.scaling = _gyro_range_scale;
-	gyro_report.range_rad_s = _gyro_range_rad_s;
 
 	/* return device ID */
 	gyro_report.device_id = _device_id.devid;

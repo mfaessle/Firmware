@@ -657,3 +657,18 @@ PARAM_DEFINE_FLOAT(MPC_IDLE_TKO, 0.0f);
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_INT32(MPC_OBS_AVOID, 0);
+
+/**
+ * Yaw mode.
+ *
+ * Specifies the heading in Auto.
+ *
+ * @min 0
+ * @max 2
+ * @value 0 towards waypoint
+ * @value 1 towards home
+ * @value 2 away from home
+ * @value 3 along trajectory
+ * @group Mission
+ */
+PARAM_DEFINE_INT32(MPC_YAW_MODE, 0);

@@ -44,6 +44,12 @@
 #include "px4_posix.h"
 #include "drivers/drv_device.h"
 
+#if 1 // Disable poll debug ouput by default completely as it uses CPU cycles
+#define DEVICE_POLL_DEBUG(FMT, ...)
+#else
+#define DEVICE_POLL_DEBUG(FMT, ...) DEVICE_DEBUG(FMT, ##__VA_ARGS__)
+#endif
+
 namespace device
 {
 
@@ -268,13 +274,8 @@ CDev::ioctl(file_t *filep, int cmd, unsigned long arg)
 int
 CDev::poll(file_t *filep, px4_pollfd_struct_t *fds, bool setup)
 {
-	DEVICE_DEBUG("CDev::Poll %s", setup ? "setup" : "teardown");
+	DEVICE_POLL_DEBUG("CDev::Poll %s", setup ? "setup" : "teardown");
 	int ret = PX4_OK;
-
-	/*
-	 * Lock against pollnotify() (and possibly other callers)
-	 */
-	lock();
 
 	if (setup) {
 		/*
@@ -282,12 +283,81 @@ CDev::poll(file_t *filep, px4_pollfd_struct_t *fds, bool setup)
 		 * benefit.
 		 */
 		fds->priv = (void *)filep;
-		DEVICE_DEBUG("CDev::poll: fds->priv = %p", filep);
+		DEVICE_POLL_DEBUG("CDev::poll: fds->priv = %p", filep);
 
 		/*
-		 * Handle setup requests.
+		 * Lock against poll_notify() and possibly other callers (protect _pollset).
 		 */
-		ret = store_poll_waiter(fds);
+		ATOMIC_ENTER;
+
+		/*
+		 * Try to store the fds for later use and handle array resizing.
+		 */
+		while ((ret = store_poll_waiter(fds)) == -ENFILE) {
+
+			// No free slot found. Resize the pollset. This is expensive, but it's only needed initially.
+
+			if (_max_pollwaiters >= 256 / 2) { //_max_pollwaiters is uint8_t
+				ret = -ENOMEM;
+				break;
+			}
+
+			const uint8_t new_count = _max_pollwaiters > 0 ? _max_pollwaiters * 2 : 1;
+			px4_pollfd_struct_t **prev_pollset = _pollset;
+
+#ifdef __PX4_NUTTX
+			// malloc uses a semaphore, we need to call it enabled IRQ's
+			px4_leave_critical_section(flags);
+#endif
+			px4_pollfd_struct_t **new_pollset = new px4_pollfd_struct_t *[new_count];
+
+#ifdef __PX4_NUTTX
+			flags = px4_enter_critical_section();
+#endif
+
+			if (prev_pollset == _pollset) {
+				// no one else updated the _pollset meanwhile, so we're good to go
+				if (!new_pollset) {
+					ret = -ENOMEM;
+					break;
+				}
+
+				if (_max_pollwaiters > 0) {
+					memset(new_pollset + _max_pollwaiters, 0, sizeof(px4_pollfd_struct_t *) * (new_count - _max_pollwaiters));
+					memcpy(new_pollset, _pollset, sizeof(px4_pollfd_struct_t *) * _max_pollwaiters);
+				}
+
+				_pollset = new_pollset;
+				_pollset[_max_pollwaiters] = fds;
+				_max_pollwaiters = new_count;
+
+				// free the previous _pollset (we need to unlock here which is fine because we don't access _pollset anymore)
+#ifdef __PX4_NUTTX
+				px4_leave_critical_section(flags);
+#endif
+
+				if (prev_pollset) {
+					delete[](prev_pollset);
+				}
+
+#ifdef __PX4_NUTTX
+				flags = px4_enter_critical_section();
+#endif
+
+				// Success
+				ret = PX4_OK;
+				break;
+			}
+
+#ifdef __PX4_NUTTX
+			px4_leave_critical_section(flags);
+#endif
+			// We have to retry
+			delete[] new_pollset;
+#ifdef __PX4_NUTTX
+			flags = px4_enter_critical_section();
+#endif
+		}
 
 		if (ret == PX4_OK) {
 
@@ -302,18 +372,18 @@ CDev::poll(file_t *filep, px4_pollfd_struct_t *fds, bool setup)
 				px4_sem_post(fds->sem);
 			}
 
-		} else {
-			PX4_WARN("Store Poll Waiter error.");
 		}
 
+		ATOMIC_LEAVE;
+
 	} else {
+		ATOMIC_ENTER;
 		/*
 		 * Handle a teardown request.
 		 */
 		ret = remove_poll_waiter(fds);
+		ATOMIC_LEAVE;
 	}
-
-	unlock();
 
 	return ret;
 }
@@ -321,7 +391,7 @@ CDev::poll(file_t *filep, px4_pollfd_struct_t *fds, bool setup)
 void
 CDev::poll_notify(pollevent_t events)
 {
-	DEVICE_DEBUG("CDev::poll_notify events = %0x", events);
+	DEVICE_POLL_DEBUG("CDev::poll_notify events = %0x", events);
 
 	/* lock against poll() as well as other wakeups */
 	ATOMIC_ENTER;
@@ -338,23 +408,14 @@ CDev::poll_notify(pollevent_t events)
 void
 CDev::poll_notify_one(px4_pollfd_struct_t *fds, pollevent_t events)
 {
-	DEVICE_DEBUG("CDev::poll_notify_one");
-
-#ifdef __PX4_NUTTX
-	int value = fds->sem->semcount;
-#else
-	int value = -1;
-	px4_sem_getvalue(fds->sem, &value);
-#endif
+	DEVICE_POLL_DEBUG("CDev::poll_notify_one");
 
 	/* update the reported event set */
 	fds->revents |= fds->events & events;
 
-	DEVICE_DEBUG(" Events fds=%p %0x %0x %0x %d", fds, fds->revents, fds->events, events, value);
+	DEVICE_POLL_DEBUG(" Events fds=%p %0x %0x %0x", fds, fds->revents, fds->events, events);
 
-	/* if the state is now interesting, wake the waiter if it's still asleep */
-	/* XXX semcount check here is a vile hack; counting semphores should not be abused as cvars */
-	if ((fds->revents != 0) && (value <= 0)) {
+	if (fds->revents != 0) {
 		px4_sem_post(fds->sem);
 	}
 }
@@ -362,7 +423,7 @@ CDev::poll_notify_one(px4_pollfd_struct_t *fds, pollevent_t events)
 pollevent_t
 CDev::poll_state(file_t *filep)
 {
-	DEVICE_DEBUG("CDev::poll_notify");
+	DEVICE_POLL_DEBUG("CDev::poll_notify");
 	/* by default, no poll events to report */
 	return 0;
 }
@@ -373,7 +434,7 @@ CDev::store_poll_waiter(px4_pollfd_struct_t *fds)
 	/*
 	 * Look for a free slot.
 	 */
-	DEVICE_DEBUG("CDev::store_poll_waiter");
+	DEVICE_POLL_DEBUG("CDev::store_poll_waiter");
 
 	for (unsigned i = 0; i < _max_pollwaiters; i++) {
 		if (nullptr == _pollset[i]) {
@@ -385,35 +446,13 @@ CDev::store_poll_waiter(px4_pollfd_struct_t *fds)
 		}
 	}
 
-	/* No free slot found. Resize the pollset */
-
-	if (_max_pollwaiters >= 256 / 2) { //_max_pollwaiters is uint8_t
-		return -ENOMEM;
-	}
-
-	const uint8_t new_count = _max_pollwaiters > 0 ? _max_pollwaiters * 2 : 1;
-	px4_pollfd_struct_t **new_pollset = new px4_pollfd_struct_t *[new_count];
-
-	if (!new_pollset) {
-		return -ENOMEM;
-	}
-
-	if (_max_pollwaiters > 0) {
-		memset(new_pollset + _max_pollwaiters, 0, sizeof(px4_pollfd_struct_t *) * (new_count - _max_pollwaiters));
-		memcpy(new_pollset, _pollset, sizeof(px4_pollfd_struct_t *) * _max_pollwaiters);
-		delete[](_pollset);
-	}
-
-	_pollset = new_pollset;
-	_pollset[_max_pollwaiters] = fds;
-	_max_pollwaiters = new_count;
-	return PX4_OK;
+	return -ENFILE;
 }
 
 int
 CDev::remove_poll_waiter(px4_pollfd_struct_t *fds)
 {
-	DEVICE_DEBUG("CDev::remove_poll_waiter");
+	DEVICE_POLL_DEBUG("CDev::remove_poll_waiter");
 
 	for (unsigned i = 0; i < _max_pollwaiters; i++) {
 		if (fds == _pollset[i]) {
@@ -424,7 +463,7 @@ CDev::remove_poll_waiter(px4_pollfd_struct_t *fds)
 		}
 	}
 
-	PX4_WARN("poll: bad fd state");
+	DEVICE_POLL_DEBUG("poll: bad fd state");
 	return -EINVAL;
 }
 

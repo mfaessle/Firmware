@@ -523,9 +523,20 @@ Mavlink::forward_message(const mavlink_message_t *msg, Mavlink *self)
 		if (inst != self) {
 			const mavlink_msg_entry_t *meta = mavlink_get_msg_entry(msg->msgid);
 
-			// Extract target system and target component if set
-			int target_system_id = (meta->target_system_ofs != 0) ? ((uint8_t *)msg)[meta->target_system_ofs] : 0;
-			int target_component_id = (meta->target_component_ofs != 0) ? ((uint8_t *)msg)[meta->target_component_ofs] : 233;
+			int target_system_id = 0;
+			int target_component_id = 233;
+
+			// might be nullptr if message is unknown
+			if (meta) {
+				// Extract target system and target component if set
+				if (meta->target_system_ofs != 0) {
+					target_system_id = ((uint8_t *)msg)[meta->target_system_ofs];
+				}
+
+				if (meta->target_component_ofs != 0) {
+					target_component_id = ((uint8_t *)msg)[meta->target_component_ofs];
+				}
+			}
 
 			// Broadcast or addressing this system and not trying to talk
 			// to the autopilot component -> pass on to other components
@@ -1139,6 +1150,8 @@ Mavlink::find_broadcast_address()
 			const struct in_addr netmask_addr = query_netmask_addr(_socket_fd, *cur_ifreq);
 			const struct in_addr broadcast_addr = compute_broadcast_addr(sin_addr, netmask_addr);
 
+			if (_interface_name && strstr(cur_ifreq->ifr_name, _interface_name) == nullptr) { continue; }
+
 			PX4_INFO("using network interface %s, IP: %s", cur_ifreq->ifr_name, inet_ntoa(sin_addr));
 			PX4_INFO("with netmask: %s", inet_ntoa(netmask_addr));
 			PX4_INFO("and broadcast IP: %s", inet_ntoa(broadcast_addr));
@@ -1310,6 +1323,14 @@ void Mavlink::send_autopilot_capabilites()
 		board_get_uuid32(uid);
 		msg.uid = (((uint64_t)uid[PX4_CPU_UUID_WORD32_UNIQUE_M]) << 32) | uid[PX4_CPU_UUID_WORD32_UNIQUE_H];
 
+#ifdef CONFIG_ARCH_BOARD_SITL
+		// To avoid that multiple SITL instances have the same UUID, we add the mavlink
+		// system ID. We subtract 1, so that the first UUID remains unchanged given the
+		// default system ID is 1.
+		//
+		// Note that the UUID show in `ver` will still be the same for all instances.
+		msg.uid += mavlink_system.sysid - 1;
+#endif
 		mavlink_msg_autopilot_version_send_struct(get_channel(), &msg);
 	}
 }
@@ -1926,6 +1947,8 @@ Mavlink::task_main(int argc, char *argv[])
 	_mode = MAVLINK_MODE_NORMAL;
 	bool _force_flow_control = false;
 
+	_interface_name = nullptr;
+
 #ifdef __PX4_NUTTX
 	/* the NuttX optarg handler does not
 	 * ignore argv[0] like the POSIX handler
@@ -1947,7 +1970,7 @@ Mavlink::task_main(int argc, char *argv[])
 	int temp_int_arg;
 #endif
 
-	while ((ch = px4_getopt(argc, argv, "b:r:d:u:o:m:t:fwxz", &myoptind, &myoptarg)) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "b:r:d:n:u:o:m:t:fwxz", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
 		case 'b':
 			_baudrate = strtoul(myoptarg, nullptr, 10);
@@ -1972,6 +1995,10 @@ Mavlink::task_main(int argc, char *argv[])
 		case 'd':
 			_device_name = myoptarg;
 			set_protocol(SERIAL);
+			break;
+
+		case 'n':
+			_interface_name = myoptarg;
 			break;
 
 #ifdef __PX4_POSIX
@@ -2996,6 +3023,7 @@ $ mavlink stream -u 14556 -s HIGHRES_IMU -r 50
 #endif
 	PRINT_MODULE_USAGE_PARAM_STRING('m', "normal", "custom|camera|onboard|osd|magic|config|iridium|minimal",
 					"Mode: sets default streams and rates", true);
+	PRINT_MODULE_USAGE_PARAM_STRING('n', nullptr, "<interface_name>", "wifi/ethernet interface name", true);
 	PRINT_MODULE_USAGE_PARAM_FLAG('f', "Enable message forwarding to other Mavlink instances", true);
 	PRINT_MODULE_USAGE_PARAM_FLAG('w', "Wait to send, until first message received", true);
 	PRINT_MODULE_USAGE_PARAM_FLAG('x', "Enable FTP", true);

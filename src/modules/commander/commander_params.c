@@ -339,7 +339,7 @@ PARAM_DEFINE_INT32(COM_LOW_BAT_ACT, 0);
  * See COM_OBL_ACT and COM_OBL_RC_ACT to configure action.
  *
  * @group Commander
- * @unit second
+ * @unit s
  * @min 0
  * @max 60
  * @increment 1
@@ -744,7 +744,7 @@ PARAM_DEFINE_FLOAT(COM_POS_FS_EPV, 10);
  *
  * This is the horizontal velocity error (EVH) threshold that will trigger a failsafe. The default is appropriate for a multicopter. Can be increased for a fixed-wing.
  *
- * @unit m
+ * @unit m/s
  * @group Commander
  */
 PARAM_DEFINE_FLOAT(COM_VEL_FS_EVH, 1);

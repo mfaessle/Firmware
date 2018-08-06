@@ -601,6 +601,9 @@ private:
 	uint8_t _network_buf[MAVLINK_MAX_PACKET_LEN];
 	unsigned _network_buf_len;
 #endif
+
+	const char *_interface_name;
+
 	int _socket_fd;
 	Protocol	_protocol;
 	unsigned short _network_port;

@@ -45,6 +45,7 @@ FixedwingPositionControl::FixedwingPositionControl() :
 {
 	_parameter_handles.l1_period = param_find("FW_L1_PERIOD");
 	_parameter_handles.l1_damping = param_find("FW_L1_DAMPING");
+	_parameter_handles.roll_slew_deg_sec = param_find("FW_L1_R_SLEW_MAX");
 
 	_parameter_handles.airspeed_min = param_find("FW_AIRSPD_MIN");
 	_parameter_handles.airspeed_trim = param_find("FW_AIRSPD_TRIM");
@@ -176,6 +177,9 @@ FixedwingPositionControl::parameters_update()
 		_l1_control.set_l1_roll_limit(radians(v));
 	}
 
+	if (param_get(_parameter_handles.roll_slew_deg_sec, &v) == PX4_OK) {
+		_l1_control.set_roll_slew_rate(radians(v));
+	}
 
 	// TECS parameters
 
@@ -700,6 +704,8 @@ FixedwingPositionControl::control_position(const Vector2f &curr_pos, const Vecto
 
 	_control_position_last_called = hrt_absolute_time();
 
+	_l1_control.set_dt(dt);
+
 	/* only run position controller in fixed-wing mode and during transitions for VTOL */
 	if (_vehicle_status.is_rotary_wing && !_vehicle_status.in_transition_mode) {
 		_control_mode_current = FW_POSCTRL_MODE_OTHER;
@@ -815,7 +821,7 @@ FixedwingPositionControl::control_position(const Vector2f &curr_pos, const Vecto
 		} else if (pos_sp_curr.type == position_setpoint_s::SETPOINT_TYPE_POSITION) {
 			/* waypoint is a plain navigation waypoint */
 			_l1_control.navigate_waypoints(prev_wp, curr_wp, curr_pos, nav_speed_2d);
-			_att_sp.roll_body = _l1_control.nav_roll();
+			_att_sp.roll_body = _l1_control.get_roll_setpoint();
 			_att_sp.yaw_body = _l1_control.nav_bearing();
 
 			tecs_update_pitch_throttle(pos_sp_curr.alt,
@@ -833,7 +839,7 @@ FixedwingPositionControl::control_position(const Vector2f &curr_pos, const Vecto
 			/* waypoint is a loiter waypoint */
 			_l1_control.navigate_loiter(curr_wp, curr_pos, pos_sp_curr.loiter_radius,
 						    pos_sp_curr.loiter_direction, nav_speed_2d);
-			_att_sp.roll_body = _l1_control.nav_roll();
+			_att_sp.roll_body = _l1_control.get_roll_setpoint();
 			_att_sp.yaw_body = _l1_control.nav_bearing();
 
 			float alt_sp = pos_sp_curr.alt;
@@ -978,7 +984,7 @@ FixedwingPositionControl::control_position(const Vector2f &curr_pos, const Vecto
 				/* populate l1 control setpoint */
 				_l1_control.navigate_waypoints(prev_wp, curr_wp, curr_pos, ground_speed);
 
-				_att_sp.roll_body = _l1_control.nav_roll();
+				_att_sp.roll_body = _l1_control.get_roll_setpoint();
 				_att_sp.yaw_body = _l1_control.nav_bearing();
 
 				if (in_takeoff_situation()) {
@@ -1192,7 +1198,7 @@ FixedwingPositionControl::control_takeoff(const Vector2f &curr_pos, const Vector
 					   tecs_status_s::TECS_MODE_TAKEOFF);
 
 		// assign values
-		_att_sp.roll_body = _runway_takeoff.getRoll(_l1_control.nav_roll());
+		_att_sp.roll_body = _runway_takeoff.getRoll(_l1_control.get_roll_setpoint());
 		_att_sp.yaw_body = _runway_takeoff.getYaw(_l1_control.nav_bearing());
 		_att_sp.fw_control_yaw = _runway_takeoff.controlYaw();
 		_att_sp.pitch_body = _runway_takeoff.getPitch(get_tecs_pitch());
@@ -1232,7 +1238,7 @@ FixedwingPositionControl::control_takeoff(const Vector2f &curr_pos, const Vector
 			/* Launch has been detected, hence we have to control the plane. */
 
 			_l1_control.navigate_waypoints(prev_wp, curr_wp, curr_pos, ground_speed);
-			_att_sp.roll_body = _l1_control.nav_roll();
+			_att_sp.roll_body = _l1_control.get_roll_setpoint();
 			_att_sp.yaw_body = _l1_control.nav_bearing();
 
 			/* Select throttle: only in LAUNCHDETECTION_RES_DETECTED_ENABLEMOTORS we want to use
@@ -1386,7 +1392,7 @@ FixedwingPositionControl::control_landing(const Vector2f &curr_pos, const Vector
 		_l1_control.navigate_waypoints(prev_wp, curr_wp, curr_pos, ground_speed);
 	}
 
-	_att_sp.roll_body = _l1_control.nav_roll();
+	_att_sp.roll_body = _l1_control.get_roll_setpoint();
 	_att_sp.yaw_body = _l1_control.nav_bearing();
 
 	if (_land_noreturn_horizontal) {
@@ -1746,7 +1752,7 @@ FixedwingPositionControl::run()
 					/* set new turn distance */
 					_fw_pos_ctrl_status.turn_distance = turn_distance;
 
-					_fw_pos_ctrl_status.nav_roll = _l1_control.nav_roll();
+					_fw_pos_ctrl_status.nav_roll = _l1_control.get_roll_setpoint();
 					_fw_pos_ctrl_status.nav_pitch = get_tecs_pitch();
 					_fw_pos_ctrl_status.nav_bearing = _l1_control.nav_bearing();
 
@@ -1956,21 +1962,21 @@ FixedwingPositionControl::tecs_update_pitch_throttle(float alt_sp, float airspee
 		break;
 	}
 
-	t.altitudeSp			= _tecs.hgt_setpoint_adj();
+	t.altitude_sp			= _tecs.hgt_setpoint_adj();
 	t.altitude_filtered		= _tecs.vert_pos_state();
-	t.airspeedSp			= _tecs.TAS_setpoint_adj();
-	t.airspeed_filtered 	= _tecs.tas_state();
+	t.airspeed_sp			= _tecs.TAS_setpoint_adj();
+	t.airspeed_filtered 		= _tecs.tas_state();
 
-	t.flightPathAngleSp		= _tecs.hgt_rate_setpoint();
-	t.flightPathAngle		= _tecs.vert_vel_state();
+	t.flight_path_angle_sp		= _tecs.hgt_rate_setpoint();
+	t.flight_path_angle		= _tecs.vert_vel_state();
 
-	t.airspeedDerivativeSp	= _tecs.TAS_rate_setpoint();
-	t.airspeedDerivative	= _tecs.speed_derivative();
+	t.airspeed_derivative_sp	= _tecs.TAS_rate_setpoint();
+	t.airspeed_derivative		= _tecs.speed_derivative();
 
-	t.totalEnergyError				= _tecs.STE_error();
-	t.totalEnergyRateError			= _tecs.STE_rate_error();
-	t.energyDistributionError		= _tecs.SEB_error();
-	t.energyDistributionRateError	= _tecs.SEB_rate_error();
+	t.total_energy_error			= _tecs.STE_error();
+	t.total_energy_rate_error		= _tecs.STE_rate_error();
+	t.energy_distribution_error		= _tecs.SEB_error();
+	t.energy_distribution_rate_error	= _tecs.SEB_rate_error();
 
 	t.throttle_integ	= _tecs.throttle_integ_state();
 	t.pitch_integ		= _tecs.pitch_integ_state();

@@ -49,6 +49,7 @@
 #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_constraints.h>
+#include <uORB/topics/vehicle_attitude.h>
 #include "../SubscriptionArray.hpp"
 
 class FlightTask : public ModuleParams
@@ -129,6 +130,8 @@ public:
 protected:
 
 	uORB::Subscription<vehicle_local_position_s> *_sub_vehicle_local_position{nullptr};
+	uORB::Subscription<vehicle_attitude_s> *_sub_attitude{nullptr};
+	uint8_t _heading_reset_counter{0}; /**< estimator heading reset */
 
 	/**
 	 * Reset all setpoints to NAN
@@ -157,7 +160,7 @@ protected:
 	matrix::Vector3f _position; /**< current vehicle position */
 	matrix::Vector3f _velocity; /**< current vehicle velocity */
 	float _yaw = 0.f; /**< current vehicle yaw heading */
-	float _dist_to_bottom; /**< current height above ground level */
+	float _dist_to_bottom = 0.0f; /**< current height above ground level */
 
 	/**
 	 * Setpoints which the position controller has to execute.

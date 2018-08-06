@@ -307,20 +307,6 @@ private:
 	void			mag_measure();
 
 	/**
-	 * Accel self test
-	 *
-	 * @return 0 on success, 1 on failure
-	 */
-	int			accel_self_test();
-
-	/**
-	 * Mag self test
-	 *
-	 * @return 0 on success, 1 on failure
-	 */
-	int			mag_self_test();
-
-	/**
 	 * Read a register from the FXOS8701C
 	 *
 	 * @param		The register to read.
@@ -884,9 +870,6 @@ FXOS8701CQ::ioctl(struct file *filp, int cmd, unsigned long arg)
 		memcpy((struct accel_calibration_s *) arg, &_accel_scale, sizeof(_accel_scale));
 		return OK;
 
-	case ACCELIOCSELFTEST:
-		return accel_self_test();
-
 	default:
 		/* give it to the superclass */
 		return SPI::ioctl(filp, cmd, arg);
@@ -992,15 +975,6 @@ FXOS8701CQ::mag_ioctl(struct file *filp, int cmd, unsigned long arg)
 		memcpy((struct mag_calibration_s *) arg, &_mag_scale, sizeof(_mag_scale));
 		return OK;
 
-	case MAGIOCSRANGE:
-		return mag_set_range(arg);
-
-	case MAGIOCGRANGE:
-		return _mag_range_ga;
-
-	case MAGIOCSELFTEST:
-		return mag_self_test();
-
 	case MAGIOCGEXTERNAL:
 		/* Even if this sensor is on the "external" SPI bus
 		 * it is still fixed to the autopilot assembly,
@@ -1012,51 +986,6 @@ FXOS8701CQ::mag_ioctl(struct file *filp, int cmd, unsigned long arg)
 		/* give it to the superclass */
 		return SPI::ioctl(filp, cmd, arg);
 	}
-}
-
-int
-FXOS8701CQ::accel_self_test()
-{
-	/*todo:Implement
-	 * set to 2 Jmode Save current samples
-	 *  Light bit and look for the offsets.
-	 * ±2 g mode, X-axis 	+192
-	 * ±2 g mode, Y-axis 	+270
-	 * ±2 g mode, Z-axis 	+1275
-	*/
-
-
-	if (_accel_read == 0) {
-		return 1;
-	}
-
-	return 0;
-}
-
-int
-FXOS8701CQ::mag_self_test()
-{
-	if (_mag_read == 0) {
-		return 1;
-	}
-
-	/**
-	 * inspect mag offsets
-	 * don't check mag scale because it seems this is calibrated on chip
-	 */
-	if (fabsf(_mag_scale.x_offset) < 0.000001f) {
-		return 1;
-	}
-
-	if (fabsf(_mag_scale.y_offset) < 0.000001f) {
-		return 1;
-	}
-
-	if (fabsf(_mag_scale.z_offset) < 0.000001f) {
-		return 1;
-	}
-
-	return 0;
 }
 
 uint8_t
@@ -1469,7 +1398,6 @@ FXOS8701CQ::measure()
 	accel_report.z_integral = aval_integrated(2);
 
 	accel_report.scaling = _accel_range_scale;
-	accel_report.range_m_s2 = _accel_range_m_s2;
 
 	/* return device ID */
 	accel_report.device_id = _device_id.devid;
@@ -1535,7 +1463,6 @@ FXOS8701CQ::mag_measure()
 	mag_report.y = ((yraw_f * _mag_range_scale) - _mag_scale.y_offset) * _mag_scale.y_scale;
 	mag_report.z = ((zraw_f * _mag_range_scale) - _mag_scale.z_offset) * _mag_scale.z_scale;
 	mag_report.scaling = _mag_range_scale;
-	mag_report.range_ga = (float)_mag_range_ga;
 	mag_report.error_count = perf_event_count(_bad_registers) + perf_event_count(_bad_values);
 
 	mag_report.temperature = _last_temperature;
@@ -1818,8 +1745,6 @@ test()
 	PX4_INFO("accel y: \t%d\traw", (int)accel_report.y_raw);
 	PX4_INFO("accel z: \t%d\traw", (int)accel_report.z_raw);
 
-	PX4_INFO("accel range: %8.4f m/s^2", (double)accel_report.range_m_s2);
-
 	/* get the driver */
 	fd_mag = open(FXOS8701C_DEVICE_PATH_MAG, O_RDONLY);
 
@@ -1850,7 +1775,6 @@ test()
 	PX4_INFO("mag x: \t%d\traw", (int)m_report.x_raw);
 	PX4_INFO("mag y: \t%d\traw", (int)m_report.y_raw);
 	PX4_INFO("mag z: \t%d\traw", (int)m_report.z_raw);
-	PX4_INFO("mag range: %8.4f ga", (double)m_report.range_ga);
 
 	/* reset to default polling */
 	if (ioctl(fd_accel, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT) < 0) {

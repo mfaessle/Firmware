@@ -1,6 +1,6 @@
 #!nsh
 #
-# Script to configure control interface
+# Script to configure control interfaces.
 #
 #
 # NOTE: environment variable references:
@@ -34,6 +34,104 @@ fi
 if [ $USE_IO == no ]
 then
 	set MIXER_AUX none
+fi
+
+#
+# Set the default output mode if none was set.
+#
+if [ $OUTPUT_MODE == none ]
+then
+	if [ $USE_IO == yes ]
+	then
+		# Enable IO output only if IO is present.
+		if [ $IO_PRESENT == yes ]
+		then
+			set OUTPUT_MODE io
+		fi
+	else
+		set OUTPUT_MODE fmu
+	fi
+fi
+
+#
+# If OUTPUT_MODE == none then something is wrong with setup and we shouldn't try to enable output.
+#
+if [ $OUTPUT_MODE != none ]
+then
+	if [ $OUTPUT_MODE == mkblctrl ]
+	then
+		if [ $MKBLCTRL_MODE == x ]
+		then
+			set MKBLCTRL_ARG "-mkmode x"
+		fi
+		if [ $MKBLCTRL_MODE == + ]
+		then
+			set MKBLCTRL_ARG "-mkmode +"
+		fi
+
+		if mkblctrl $MKBLCTRL_ARG
+		then
+		else
+			# Error tune.
+			tune_control play -t 2
+		fi
+	fi
+
+	if [ $OUTPUT_MODE == hil ]
+	then
+		if pwm_out_sim start
+		then
+		else
+			# Error tune.
+			tune_control play -t 2
+		fi
+	fi
+
+	if [ $OUTPUT_MODE == fmu ]
+	then
+		if fmu mode_$FMU_MODE $FMU_ARGS
+		then
+		else
+			echo "FMU start failed" >> $LOG_FILE
+			# Error tune.
+			tune_control play -t 2
+		fi
+	fi
+
+	if [ $OUTPUT_MODE == uavcan_esc ]
+	then
+		if param compare UAVCAN_ENABLE 0
+		then
+			param set UAVCAN_ENABLE 3
+		fi
+	fi
+
+	if [ $OUTPUT_MODE == io -o $OUTPUT_MODE == uavcan_esc ]
+	then
+		sh /etc/init.d/rc.io
+	fi
+
+	#
+	# Start IO or FMU for RC PPM input if needed.
+	#
+	if [ $IO_PRESENT == yes ]
+	then
+		if [ $OUTPUT_MODE != io ]
+		then
+			sh /etc/init.d/rc.io
+		fi
+	else
+		if [ $OUTPUT_MODE != fmu ]
+		then
+			if fmu mode_${FMU_MODE} $FMU_ARGS
+			then
+			else
+				echo "FMU mode_${FMU_MODE} start failed" >> $LOG_FILE
+				# Error tune.
+				tune_control play -t 2
+			fi
+		fi
+	fi
 fi
 
 if [ $MIXER != none -a $MIXER != skip ]
@@ -167,23 +265,6 @@ then
 		fi
 
 		#
-		# Set disarmed values for aux out.
-		# Transitional support until all configs are updated.
-		#
-		if [ $PWM_ACHDIS == none ]
-		then
-			set PWM_ACHDIS ${PWM_AUX_OUT}
-		fi
-
-		#
-		# Set disarmed, min and max PWM_AUX values.
-		#
-		if [ $PWM_AUX_DISARMED != none -a $PWM_ACHDIS != none ]
-		then
-			pwm disarmed -c ${PWM_ACHDIS} -p ${PWM_AUX_DISARMED} -d ${OUTPUT_AUX_DEV}
-		fi
-
-		#
 		# Per channel disarmed settings.
 		#
 		pwm disarmed -c 1 -p p:PWM_AUX_DIS1 -d ${OUTPUT_AUX_DEV}
@@ -192,6 +273,8 @@ then
 		pwm disarmed -c 4 -p p:PWM_AUX_DIS4 -d ${OUTPUT_AUX_DEV}
 		pwm disarmed -c 5 -p p:PWM_AUX_DIS5 -d ${OUTPUT_AUX_DEV}
 		pwm disarmed -c 6 -p p:PWM_AUX_DIS6 -d ${OUTPUT_AUX_DEV}
+		pwm disarmed -c 7 -p p:PWM_AUX_DIS7 -d ${OUTPUT_AUX_DEV}
+		pwm disarmed -c 8 -p p:PWM_AUX_DIS8 -d ${OUTPUT_AUX_DEV}
 
 		if [ $FAILSAFE_AUX != none ]
 		then

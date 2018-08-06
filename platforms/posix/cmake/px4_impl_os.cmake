@@ -283,6 +283,25 @@ function(px4_os_add_flags)
 	elseif ("${BOARD}" STREQUAL "bebop")
 		# TODO: Wmissing-field-initializers ignored on older toolchain, can be removed eventually
 		list(APPEND added_cxx_flags -Wno-missing-field-initializers)
+		
+	elseif ("${BOARD}" STREQUAL "bbblue")
+		set(BBBLUE_COMPILE_FLAGS -mcpu=cortex-a8 -mfpu=neon -mfloat-abi=hard -mtune=cortex-a8)
+		list(APPEND added_c_flags   ${BBBLUE_COMPILE_FLAGS})
+		list(APPEND added_cxx_flags ${BBBLUE_COMPILE_FLAGS})
+
+		set(LIBROBOTCONTROL_INSTALL_DIR $ENV{LIBROBOTCONTROL_INSTALL_DIR})
+
+		# TODO: Wmissing-field-initializers ignored on older toolchain, can be removed eventually
+		#
+		# On cross compile host system and native build system:
+		#   a) select and define LIBROBOTCONTROL_INSTALL_DIR environment variable so that 
+		#      other unwanted headers will not be included
+		#   b) install robotcontrol.h and rc/* into $LIBROBOTCONTROL_INSTALL_DIR/include
+		#   c) install pre-built native (ARM) version of librobotcontrol.* into $LIBROBOTCONTROL_INSTALL_DIR/lib
+		list(APPEND added_cxx_flags -I${LIBROBOTCONTROL_INSTALL_DIR}/include -Wno-missing-field-initializers)
+		list(APPEND added_c_flags   -I${LIBROBOTCONTROL_INSTALL_DIR}/include)
+		
+		list(APPEND added_exe_linker_flags -L${LIBROBOTCONTROL_INSTALL_DIR}/lib)
 	endif()
 
 	# output

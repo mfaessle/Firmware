@@ -42,8 +42,8 @@
 #pragma once
 
 #include <stdint.h>
+
 #include <px4_config.h>
-#include <board_config.h>
 #include <px4_defines.h>
 
 __BEGIN_DECLS
@@ -52,6 +52,18 @@ __BEGIN_DECLS
 #define DSM_FRAME_CHANNELS	7		/**< Max supported DSM channels per frame */
 #define DSM_MAX_CHANNEL_COUNT   18  /**< Max channel count of any DSM RC */
 #define DSM_BUFFER_SIZE		(DSM_FRAME_SIZE + DSM_FRAME_SIZE / 2)
+
+
+#pragma pack(push, 1)
+typedef   uint8_t dsm_frame_t[DSM_BUFFER_SIZE]; /**< DSM dsm frame receive buffer */
+typedef   uint8_t dsm_buf_t[DSM_FRAME_SIZE * 2]; // Define working buffer
+
+typedef  struct dsm_decode_t {
+	dsm_frame_t frame;
+	dsm_buf_t buf;
+} dsm_decode_t;
+
+#pragma pack(pop)
 
 __EXPORT int	dsm_init(const char *device);
 __EXPORT void	dsm_deinit(void);
@@ -74,5 +86,9 @@ enum DSM_CMD {							/* DSM bind states */
 	DSM_CMD_BIND_SEND_PULSES,
 	DSM_CMD_BIND_REINIT_UART
 };
+
+#define DSM2_BIND_PULSES 3	/* DSM_BIND_START parameter, pulses required to start dsm2 pairing */
+#define DSMX_BIND_PULSES 7	/* DSM_BIND_START parameter, pulses required to start dsmx pairing */
+#define DSMX8_BIND_PULSES 9 /* DSM_BIND_START parameter, pulses required to start 8 or more channel dsmx pairing */
 
 __END_DECLS

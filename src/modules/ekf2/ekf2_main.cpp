@@ -119,8 +119,9 @@ private:
 
 	template<typename Param>
 	void update_mag_bias(Param &mag_bias_param, int axis_index);
-
-	bool publish_attitude(const sensor_combined_s &sensors);
+	template<typename Param>
+	bool update_mag_decl(Param &mag_decl_param);
+	bool publish_attitude(const sensor_combined_s &sensors, const hrt_abstime &now);
 	bool publish_wind_estimate(const hrt_abstime &timestamp);
 
 	const Vector3f get_vel_body_wind();
@@ -190,6 +191,9 @@ private:
 	float _last_valid_mag_cal[3] = {};	///< last valid XYZ magnetometer bias estimates (mGauss)
 	bool _valid_cal_available[3] = {};	///< true when an unsaved valid calibration for the XYZ magnetometer bias is available
 	float _last_valid_variance[3] = {};	///< variances for the last valid magnetometer XYZ bias estimates (mGauss**2)
+
+	// Used to control saving of mag declination to be used on next startup
+	bool _mag_decl_saved = false;	///< true when the magnetic declination has been saved
 
 	// Used to filter velocity innovations during pre-flight checks
 	bool _preflt_horiz_fail = false;	///< true if preflight horizontal innovation checks are failed
@@ -648,6 +652,21 @@ void Ekf2::update_mag_bias(Param &mag_bias_param, int axis_index)
 	}
 }
 
+template<typename Param>
+bool Ekf2::update_mag_decl(Param &mag_decl_param)
+{
+	// update stored declination value
+	float declination_deg;
+
+	if (_ekf.get_mag_decl_deg(&declination_deg)) {
+		mag_decl_param.set(declination_deg);
+		mag_decl_param.commit_no_notification();
+		return true;
+	}
+
+	return false;
+}
+
 void Ekf2::run()
 {
 	bool imu_bias_reset_request = false;
@@ -779,7 +798,7 @@ void Ekf2::run()
 		_ekf.setIMUData(now, sensors.gyro_integral_dt, sensors.accelerometer_integral_dt, gyro_integral, accel_integral);
 
 		// publish attitude immediately (uses quaternion from output predictor)
-		publish_attitude(sensors);
+		publish_attitude(sensors, now);
 
 		// read mag data
 		bool magnetometer_updated = false;
@@ -985,7 +1004,7 @@ void Ekf2::run()
 
 			} else {
 				// handle case where the blended states cannot be updated
-				if (_gps_state[0].fix_type > _gps_state[0].fix_type) {
+				if (_gps_state[0].fix_type > _gps_state[1].fix_type) {
 					// GPS 1 has the best fix status so use that
 					_gps_select_index = 0;
 
@@ -1395,6 +1414,7 @@ void Ekf2::run()
 			estimator_status_s status;
 			status.timestamp = now;
 			_ekf.get_state_delayed(status.states);
+			status.n_states = 24;
 			_ekf.get_covariances(status.covariances);
 			_ekf.get_gps_check_status(&status.gps_check_fail_flags);
 			status.control_mode_flags = control_status.value;
@@ -1409,7 +1429,6 @@ void Ekf2::run()
 			_ekf.get_ekf_soln_status(&status.solution_status_flags);
 			_ekf.get_imu_vibe_metrics(status.vibe);
 			status.time_slip = _last_time_slip_us / 1e6f;
-			status.nan_flags = 0.0f; // unused
 			status.health_flags = 0.0f; // unused
 			status.timeout_flags = 0.0f; // unused
 			status.pre_flt_fail = _preflt_fail;
@@ -1488,7 +1507,12 @@ void Ekf2::run()
 					_total_cal_time_us = 0;
 				}
 
-				publish_wind_estimate(now);
+			}
+
+			publish_wind_estimate(now);
+
+			if (!_mag_decl_saved && (vehicle_status.arming_state == vehicle_status_s::ARMING_STATE_STANDBY)) {
+				_mag_decl_saved = update_mag_decl(_mag_declination_deg);
 			}
 
 			{
@@ -1619,12 +1643,12 @@ int Ekf2::getRangeSubIndex(const int *subs)
 	return -1;
 }
 
-bool Ekf2::publish_attitude(const sensor_combined_s &sensors)
+bool Ekf2::publish_attitude(const sensor_combined_s &sensors, const hrt_abstime &now)
 {
 	if (_ekf.attitude_valid()) {
 		// generate vehicle attitude quaternion data
 		vehicle_attitude_s att;
-		att.timestamp = hrt_absolute_time();
+		att.timestamp = now;
 
 		const Quatf q{_ekf.calculate_quaternion()};
 		q.copyTo(att.q);
